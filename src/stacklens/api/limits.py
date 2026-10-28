@@ -28,6 +28,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from collections.abc import Awaitable, Callable
+from urllib.parse import urlsplit
 
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
@@ -38,6 +39,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from stacklens.api.security import API_KEY_HEADER
 from stacklens.config import get_settings
+from stacklens.workspace import store
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +64,12 @@ def identify(request: Request) -> str:
     if presented and (not isinstance(path, str) or not path.startswith("/api/v1/")):
         return "key:" + hashlib.sha256(presented.encode()).hexdigest()[:16]
 
+    token = request.cookies.get("stacklens_session")
+    if isinstance(token, str):
+        identity = store.get_user(token)
+        if identity:
+            return "user:" + hashlib.sha256(identity["id"].encode()).hexdigest()[:16]
+
     client = request.client
     return f"ip:{client.host}" if client else "ip:desconhecido"
 
@@ -84,7 +92,7 @@ def _build_storage(uri: str) -> Storage:
         # here rather than at the first request.
         storage = storage_from_string(uri)
         if not isinstance(storage, Storage):
-            msg = f"{uri} builds an async storage, which this middleware cannot use."
+            msg = "Configured rate-limit storage is asynchronous."
             raise TypeError(msg)
         if not storage.check():
             raise ConnectionError(uri)
@@ -92,13 +100,24 @@ def _build_storage(uri: str) -> Storage:
         logger.warning(
             "Rate limit storage unreachable at %s. Counters will be per process, "
             "so the ceiling is enforced once per worker.",
-            uri,
+            _safe_storage_label(uri),
             exc_info=True,
         )
         return MemoryStorage()
 
-    logger.info("Rate limit counters shared through %s", uri)
+    logger.info("Rate limit counters shared through %s", _safe_storage_label(uri))
     return storage
+
+
+def _safe_storage_label(uri: str) -> str:
+    parsed = urlsplit(uri)
+    if parsed.scheme and parsed.hostname:
+        try:
+            port = parsed.port
+        except ValueError:
+            port = None
+        return f"{parsed.scheme}://{parsed.hostname}:{port or ''}{parsed.path}"
+    return parsed.scheme or "configured storage"
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):

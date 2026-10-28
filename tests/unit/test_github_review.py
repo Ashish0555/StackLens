@@ -66,6 +66,7 @@ def test_publish_review_sends_inline_comments() -> None:
         head_sha="abc123",
         title="Improve answer",
         files=[ChangedFile(path="example.py", diff="+x", content="x", changed_lines=[2])],
+        skipped_files=[],
     )
     report = ReviewReport(
         summary="Please fix the issue.",

@@ -1,6 +1,6 @@
 FROM python:3.12-slim AS builder
 WORKDIR /build
-COPY pyproject.toml README.md LICENSE ./
+COPY pyproject.toml README.md ./
 COPY src/ ./src/
 RUN python -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir .
 
@@ -11,7 +11,7 @@ ENV PATH="/opt/venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
 RUN useradd --create-home --uid 1000 stacklens
 COPY --from=builder /opt/venv /opt/venv
 WORKDIR /app
-COPY --chown=stacklens:stacklens alembic.ini LICENSE ./
+COPY --chown=stacklens:stacklens alembic.ini ./
 COPY --chown=stacklens:stacklens migrations/ ./migrations/
 COPY --chown=stacklens:stacklens data/ ./data/
 COPY --chown=stacklens:stacklens evals/ ./evals/

@@ -16,6 +16,10 @@ Potential project bullets, after verifying the implementation:
   handling; added browser upload/chat flows and automated authorization and failure-path tests.
 - Added a local and GitHub pull-request review workflow that retrieves changed files, constrains
   findings to changed lines, and publishes inline comments only with an explicit opt-in flag.
+- Added review hardening for sensitive-file filtering, secret redaction, patch-size limits,
+  deletion-only diffs, duplicate comment locations, and explicit partial-review reporting.
+- Added an authenticated, idempotent document deletion endpoint with ownership checks, vector
+  cleanup, upload cleanup, and ingestion tombstones.
 
 Skills represented in code: Python, FastAPI, SQL, PostgreSQL/pgvector, Redis, Kafka, LLM APIs,
 embeddings, RAG, prompt engineering, structured outputs, tool calling, LangChain, LangGraph,

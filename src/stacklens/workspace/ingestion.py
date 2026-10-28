@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 
 from stacklens.config import get_settings
-from stacklens.indexing import index_documents, load_documents, split_documents
+from stacklens.indexing import delete_source, index_documents, load_documents, split_documents
 from stacklens.indexing.scope import collection_scope, user_collection
 from stacklens.workspace import store
 
@@ -18,6 +18,8 @@ def process_job(job_id: str) -> bool:
     if job is None:
         return False
     try:
+        if not store.job_is_active(job["id"], job["lease_token"]):
+            return False
         original_path = Path(job["path"])
         path = original_path.resolve()
         root = get_settings().upload_dir.resolve()
@@ -40,6 +42,11 @@ def process_job(job_id: str) -> bool:
                 article_max_chars=settings.article_max_chars,
             )
             count = index_documents(chunks)
+            # A deletion may race with indexing. Remove anything this worker
+            # wrote if the tombstone won while the provider was running.
+            if not store.job_is_active(job["id"], job["lease_token"]):
+                delete_source(f"{job['id'][:12]}-{job['filename']}")
+                return False
         store.finish_job(job, chunks=count)
     except Exception as exc:
         # Do not persist provider error text: it can contain request data or credentials.

@@ -58,6 +58,8 @@ not production policies.
 - Optional Langfuse tracing.
 - GitHub pull-request review through the REST API, with dry-run output by default and explicit
   opt-in inline comment publishing.
+- Sensitive-file filtering, secret redaction, changed-line validation, and explicit partial-review
+  reporting protect the review prompt and published output.
 
 ### Evaluation
 
@@ -79,8 +81,10 @@ stacklens review-diff changes.patch --repo-root .
 
 The GitHub workflow fetches a pull request's changed files and head revision through the GitHub
 API, loads the changed file contents at that revision, and runs the same evidence-bound review
-pipeline. Findings are printed locally by default. Use `--publish` only after reviewing the
-output; it creates a pull-request review with inline comments on changed lines.
+pipeline. Sensitive files, secret-like values, binary files, oversized files, and files without
+text patches are excluded and reported. Findings are printed locally by default. Use `--publish`
+only after reviewing the output; it creates a pull-request review with inline comments on changed
+lines. Deletion-only files are reported but have no fabricated comment location.
 
 Set a fine-grained GitHub token privately in `.env`:
 
@@ -208,7 +212,11 @@ which claims are supported by the current implementation and which require addit
 - Passwords use PBKDF2; this demo does not include password reset, MFA or email verification.
 - Conversation turns are serialized inside one API process. Keep `API_WORKERS=1` for this version.
 - Uploads allow text-based PDF, Markdown, text and reStructuredText up to 5 MB. OCR is not included.
-- The UI lists the latest 100 ingestion jobs per account. It does not provide document deletion.
+- The UI lists the latest 100 ingestion jobs per account. Documents can be deleted through the
+  authenticated `DELETE /api/v1/documents/{job_id}` endpoint; deletion is ownership-checked,
+  idempotent, removes indexed chunks, and tombstones pending jobs.
+- Conversation history is bounded to recent turns and a configurable character budget
+  (`MAX_CONVERSATION_TURNS` and `MAX_CONVERSATION_CHARS`).
 - Redis failure falls back to process memory; that loses persistence and shared counters until restart.
 - Langfuse is opt-in: traces can contain questions and source text. Enable it only for data you intend to send.
 - The sample evaluation is small and synthetic. No accuracy, user-count, throughput or latency improvement is claimed.

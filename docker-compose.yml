@@ -9,7 +9,7 @@ x-app-env: &app-env
   RATE_LIMIT_STORAGE: redis://redis:6379/1
   API_WORKERS: "1"
   API_KEY: ${API_KEY:-}
-  COOKIE_SECURE: ${COOKIE_SECURE:-false}
+  COOKIE_SECURE: ${COOKIE_SECURE:-true}
   REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
   APP_DB_PATH: /app/runtime/application.sqlite3
   UPLOAD_DIR: /app/runtime/uploads

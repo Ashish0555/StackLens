@@ -85,6 +85,29 @@ def test_document_list_status_and_retry_are_owner_scoped(workspace_app):
         assert "path" not in job and "owner" not in job
 
 
+def test_document_delete_is_owner_scoped_and_idempotent(workspace_app, monkeypatch):
+    removed: list[str] = []
+    monkeypatch.setattr(workspace, "delete_source", lambda source: removed.append(source) or 1)
+    with TestClient(workspace_app) as a, TestClient(workspace_app) as b:
+        account(a, "alice")
+        account(b, "bob")
+        response = a.post(
+            "/api/v1/documents",
+            headers=HEADERS,
+            files={"file": ("notes.md", b"delete me", "text/markdown")},
+        )
+        job = response.json()
+
+        assert b.delete("/api/v1/documents/" + job["id"], headers=HEADERS).status_code == 404
+        deleted = a.delete("/api/v1/documents/" + job["id"], headers=HEADERS)
+        assert deleted.status_code == 200
+        assert deleted.json()["deleted"] is True
+        repeated = a.delete("/api/v1/documents/" + job["id"], headers=HEADERS)
+        assert repeated.status_code == 200
+        assert repeated.json()["already_deleted"] is True
+        assert removed == [f"{job['id'][:12]}-notes.md"] * 2
+
+
 def test_duplicate_uploads_reuse_a_job_and_do_not_escape_upload_root(workspace_app):
     with TestClient(workspace_app) as c:
         identity = account(c, "alice")

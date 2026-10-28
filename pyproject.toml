@@ -39,6 +39,7 @@ dependencies = [
 
 [project.optional-dependencies]
 safety = ["llm-guard>=0.3.16,<1", "sentence-transformers>=3.0,<7"]
+rerank = ["sentence-transformers>=3.0,<7"]
 dev = [
     "pytest>=8.0",
     "httpx>=0.28",

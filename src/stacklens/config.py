@@ -68,6 +68,8 @@ class Settings(BaseSettings):
     scan_corpus_for_injection: bool = False
     max_question_chars: int = Field(default=2000, gt=0)
     max_answer_tokens: int = Field(default=8000, gt=0)
+    max_conversation_turns: int = Field(default=8, gt=0, le=50)
+    max_conversation_chars: int = Field(default=30_000, gt=0, le=200_000)
     knowledge_domain: str = Field(
         default="engineering documentation, API contracts, architecture and operational runbooks",
         min_length=3,
@@ -101,10 +103,13 @@ class Settings(BaseSettings):
     kafka_topic: str = "stacklens.ingestion"
     kafka_group_id: str = "stacklens-workers"
     max_upload_bytes: int = Field(default=5_000_000, gt=0, le=50_000_000)
-    cookie_secure: bool = False
+    cookie_secure: bool = True
     registration_enabled: bool = True
     validation_retries: int = Field(default=1, ge=0, le=2)
     evidence_judge_enabled: bool = True
+    max_review_files: int = Field(default=100, gt=0, le=300)
+    max_review_file_bytes: int = Field(default=500_000, gt=0, le=5_000_000)
+    max_review_context_chars: int = Field(default=120_000, gt=0, le=500_000)
 
     @property
     def auth_required(self) -> bool:

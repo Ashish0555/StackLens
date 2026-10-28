@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urljoin
 from urllib.request import Request, urlopen
@@ -14,6 +14,7 @@ from stacklens.config import get_settings
 from stacklens.review.service import (
     ChangedFile,
     ReviewReport,
+    _safe_relative_path,
     changed_lines_from_patch,
     review_files,
 )
@@ -34,6 +35,8 @@ class PullRequest:
     head_sha: str
     title: str
     files: list[ChangedFile]
+    skipped_files: list[str] = field(default_factory=list)
+    complete: bool = True
 
 
 class GitHubClient:
@@ -47,8 +50,11 @@ class GitHubClient:
         owner, repo = _split_repository(repository)
         pull = self._request(f"repos/{owner}/{repo}/pulls/{number}")
         files = self._request(f"repos/{owner}/{repo}/pulls/{number}/files?per_page={_MAX_FILES}")
-        if not isinstance(files, list) or len(files) >= _MAX_FILES:
-            raise GitHubAPIError("The pull request has too many files for this review.")
+        if not isinstance(files, list):
+            raise GitHubAPIError("GitHub returned an invalid pull-request file list.")
+        skipped: list[str] = []
+        if len(files) >= _MAX_FILES:
+            skipped.append(f"[file list truncated at {_MAX_FILES} files]")
         changed: list[ChangedFile] = []
         for item in files:
             if not isinstance(item, dict):
@@ -56,8 +62,25 @@ class GitHubClient:
             path = item.get("filename")
             patch = item.get("patch")
             if not isinstance(path, str) or not isinstance(patch, str):
+                if isinstance(path, str):
+                    skipped.append(f"{path} (missing textual patch)")
                 continue
-            content = self._file_content(owner, repo, path, str(pull["head"]["sha"]))
+            try:
+                _safe_relative_path(path)
+            except ValueError:
+                skipped.append(f"{path} (unsafe path)")
+                continue
+            if len(patch.encode()) > get_settings().max_review_file_bytes:
+                skipped.append(f"{path} (patch too large)")
+                continue
+            try:
+                content = self._file_content(owner, repo, path, str(pull["head"]["sha"]))
+            except GitHubAPIError as error:
+                skipped.append(f"{path} ({type(error).__name__})")
+                continue
+            if len(content.encode()) > get_settings().max_review_file_bytes:
+                skipped.append(f"{path} (file too large)")
+                continue
             changed.append(
                 ChangedFile(
                     path=path,
@@ -75,26 +98,46 @@ class GitHubClient:
             head_sha=str(pull["head"]["sha"]),
             title=str(pull.get("title", "")),
             files=changed,
+            skipped_files=skipped,
+            complete=not skipped,
         )
 
     def publish_review(self, pull_request: PullRequest, report: ReviewReport) -> None:
-        comments = [
-            {
-                "path": finding.path,
-                "line": finding.line,
-                "side": "RIGHT",
-                "body": (
-                    f"**{finding.severity.value.upper()}** — {finding.title}\n\n"
-                    f"{finding.explanation}\n\n"
-                    f"Suggested fix: {finding.suggested_fix}\n\n"
-                    f"Confidence: {finding.confidence:.0%}"
-                ),
-            }
-            for finding in report.findings
-        ]
+        changed_lines = {file.path: set(file.changed_lines) for file in pull_request.files}
+        seen: set[tuple[str, int]] = set()
+        comments: list[dict[str, object]] = []
+        for finding in report.findings:
+            if (
+                finding.line not in changed_lines.get(finding.path, set())
+                or finding.line <= 0
+                or (finding.path, finding.line) in seen
+            ):
+                continue
+            comments.append(
+                {
+                    "path": finding.path,
+                    "line": finding.line,
+                    "side": "RIGHT",
+                    "body": (
+                        f"**{finding.severity.value.upper()}** — {finding.title}\n\n"
+                        f"{finding.explanation}\n\n"
+                        f"Suggested fix: {finding.suggested_fix}\n\n"
+                        f"Confidence: {finding.confidence:.0%}"
+                    ),
+                }
+            )
+            seen.add((finding.path, finding.line))
         payload = {
             "commit_id": pull_request.head_sha,
-            "body": report.summary,
+            "body": (
+                report.summary
+                + (
+                    "\n\nThis was a partial review. Skipped files: "
+                    + ", ".join(report.skipped_files or pull_request.skipped_files)
+                    if report.skipped_files or pull_request.skipped_files
+                    else ""
+                )
+            ),
             "event": "COMMENT",
             "comments": comments,
         }

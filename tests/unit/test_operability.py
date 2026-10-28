@@ -275,6 +275,25 @@ class TestCallerIdentity:
 
         assert identify(request) == "ip:10.0.0.7"
 
+    def test_authenticated_session_uses_account_identity(self, monkeypatch) -> None:
+        from unittest.mock import Mock
+
+        from stacklens.api.limits import identify
+
+        request = Mock()
+        request.headers = {}
+        request.cookies = {"stacklens_session": "session-token"}
+        request.client.host = "10.0.0.7"
+        monkeypatch.setattr(
+            "stacklens.api.limits.store.get_user",
+            lambda token: {"id": "account-1"} if token == "session-token" else None,
+        )
+
+        identifier = identify(request)
+
+        assert identifier.startswith("user:")
+        assert identifier != "ip:10.0.0.7"
+
 
 def _answer() -> object:
     from stacklens.types import AnswerResult

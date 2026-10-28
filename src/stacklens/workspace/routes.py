@@ -25,6 +25,7 @@ from stacklens.api.schemas import AnswerResponse
 from stacklens.api.sessions import RedisSessionStore
 from stacklens.config import get_settings
 from stacklens.evaluation.metrics import extract_retrieved_sources
+from stacklens.indexing import delete_source
 from stacklens.indexing.scope import collection_scope, user_collection
 from stacklens.observability import flush
 from stacklens.workspace import store
@@ -115,6 +116,19 @@ def public_job(job: dict) -> dict:
     }
 
 
+def _remove_upload(path: str) -> None:
+    target = Path(path)
+    root = get_settings().upload_dir.resolve()
+    resolved = target.resolve()
+    if not resolved.is_relative_to(root) or target.is_symlink():
+        return
+    if resolved.is_file():
+        resolved.unlink()
+    parent = resolved.parent
+    if parent != root and parent.is_dir() and not any(parent.iterdir()):
+        parent.rmdir()
+
+
 @router.get("/documents")
 def documents(identity: Annotated[dict, Depends(user)]):
     return {"documents": [public_job(j) for j in store.list_jobs(identity["id"])]}
@@ -176,6 +190,22 @@ def retry(job_id: str, tasks: BackgroundTasks, identity: Annotated[dict, Depends
     job = store.get_job(job_id, identity["id"])
     assert job is not None
     return public_job(job)
+
+
+@router.delete("/documents/{job_id}", dependencies=[Depends(csrf)])
+def delete_document(job_id: str, identity: Annotated[dict, Depends(user)]):
+    job = store.get_job(job_id, identity["id"])
+    if not job:
+        raise HTTPException(404, "Document not found.")
+    deleted, changed = store.delete_job(job_id, identity["id"])
+    assert deleted is not None
+    try:
+        with collection_scope(user_collection(identity["id"])):
+            delete_source(f"{job_id[:12]}-{job['filename']}")
+        _remove_upload(job["path"])
+    except Exception as exc:
+        raise HTTPException(503, "Document deletion is incomplete; retry shortly.") from exc
+    return {"deleted": True, "already_deleted": not changed, "document": public_job(deleted)}
 
 
 @router.post("/chat", dependencies=[Depends(csrf)], response_model=AnswerResponse)

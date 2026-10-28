@@ -75,11 +75,10 @@ class ChatSession:
         # message the model never answered.
         check_question(question)
 
+        self._messages = _bound_history(self._messages)
         self._messages.append(HumanMessage(question))
         # Everything after this mark belongs to the current turn. Measuring
         # from here is what keeps earlier turns from being counted twice.
-        turn_start = len(self._messages)
-
         # Rebuilt every turn, which is what gives the search budget a fresh
         # count. Construction is local object assembly with no network in it,
         # so paying for it once per question is cheaper than the plumbing that
@@ -97,10 +96,14 @@ class ChatSession:
             raise
         elapsed = time.perf_counter() - started
 
-        self._messages = state["messages"]
-        produced = self._messages[turn_start:]
+        self._messages = _bound_history(state["messages"])
+        last_user = max(
+            (i for i, message in enumerate(self._messages) if isinstance(message, HumanMessage)),
+            default=-1,
+        )
+        produced = self._messages[last_user + 1 :]
 
-        result = _to_result(self._messages, produced, elapsed)
+        result = _to_result(produced, elapsed)
         result.findings.extend(
             check_answer(
                 result.answer,
@@ -119,7 +122,6 @@ class ChatSession:
 
 
 def _to_result(
-    messages: list[BaseMessage],
     produced: list[BaseMessage],
     elapsed: float,
 ) -> AnswerResult:
@@ -127,11 +129,32 @@ def _to_result(
     tool_calls = _extract_tool_calls(produced)
 
     return AnswerResult(
-        answer=str(messages[-1].content) if messages else "",
+        answer=str(produced[-1].content) if produced else "",
         tool_calls=tool_calls,
-        messages=list(messages),
+        messages=list(produced),
         metrics=_collect_metrics(produced, tool_calls, elapsed),
     )
+
+
+def _bound_history(messages: list[BaseMessage]) -> list[BaseMessage]:
+    """Keep recent complete turns within configured count and character budgets."""
+    settings = get_settings()
+    human_positions = [i for i, message in enumerate(messages) if isinstance(message, HumanMessage)]
+    start = (
+        human_positions[max(0, len(human_positions) - settings.max_conversation_turns)]
+        if human_positions
+        else 0
+    )
+    recent = messages[start:]
+    selected: list[BaseMessage] = []
+    chars = 0
+    for message in reversed(recent):
+        size = len(str(message.content))
+        if selected and chars + size > settings.max_conversation_chars:
+            break
+        selected.append(message)
+        chars += size
+    return list(reversed(selected))
 
 
 def _extract_tool_calls(messages: list[BaseMessage]) -> list[ToolCall]:

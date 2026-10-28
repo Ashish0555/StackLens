@@ -66,13 +66,9 @@ def build_session_store() -> SessionStore:
             client = redis.Redis.from_url(settings.redis_url)
             client.ping()
         except Exception:
-            logger.warning(
-                "Redis unreachable at %s. Sessions will live in this process only.",
-                settings.redis_url,
-                exc_info=True,
-            )
+            logger.warning("Redis unreachable. Sessions will live in this process only.")
         else:
-            logger.info("Sessions in Redis at %s", settings.redis_url)
+            logger.info("Using Redis-backed sessions")
             return RedisSessionStore(client, ttl_seconds=settings.session_ttl_seconds)
 
     logger.info("Sessions in memory, in this process only.")

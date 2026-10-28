@@ -157,6 +157,31 @@ def retry_job(job_id: str, owner: str) -> bool:
         return result.rowcount == 1
 
 
+def delete_job(job_id: str, owner: str) -> tuple[dict | None, bool]:
+    """Tombstone a job so queued or in-flight workers cannot publish it again."""
+    with connection() as db:
+        row = db.execute("SELECT * FROM jobs WHERE id=? AND owner=?", (job_id, owner)).fetchone()
+        if row is None:
+            return None, False
+        if row["status"] == "deleted":
+            return dict(row), False
+        db.execute(
+            "UPDATE jobs SET status='deleted',lease_until=NULL,lease_token=NULL,error=NULL "
+            "WHERE id=? AND owner=?",
+            (job_id, owner),
+        )
+        return dict(db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()), True
+
+
+def job_is_active(job_id: str, lease_token: str) -> bool:
+    with connection() as db:
+        row = db.execute(
+            "SELECT 1 FROM jobs WHERE id=? AND lease_token=? AND status='processing'",
+            (job_id, lease_token),
+        ).fetchone()
+    return row is not None
+
+
 def pending_jobs() -> list[dict]:
     with connection() as db:
         db.execute(

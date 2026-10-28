@@ -53,6 +53,11 @@ def isolated_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Ite
         "GUARDRAIL_SCANNER",
         "MAX_QUESTION_CHARS",
         "MAX_ANSWER_TOKENS",
+        "MAX_CONVERSATION_TURNS",
+        "MAX_CONVERSATION_CHARS",
+        "MAX_REVIEW_FILES",
+        "MAX_REVIEW_FILE_BYTES",
+        "MAX_REVIEW_CONTEXT_CHARS",
         "INJECTION_MODEL",
         "SCAN_CORPUS_FOR_INJECTION",
         "DATA_DIR",
@@ -82,6 +87,8 @@ def isolated_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Ite
     ):
         monkeypatch.delenv(variable, raising=False)
 
+    # TestClient uses HTTP; production defaults to Secure cookies.
+    monkeypatch.setenv("COOKIE_SECURE", "false")
     get_settings.cache_clear()
     _forget_caches()
     yield
