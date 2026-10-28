@@ -1,0 +1,68 @@
+name: stacklens
+x-app-env: &app-env
+  DATABASE_URL: postgresql+psycopg://stacklens:${POSTGRES_PASSWORD:-stacklens}@postgres:5432/stacklens
+  OPENAI_API_KEY: ${OPENAI_API_KEY:?Set OPENAI_API_KEY in .env}
+  CHAT_MODEL: ${CHAT_MODEL:-gpt-4o-mini}
+  SESSION_BACKEND: redis
+  REDIS_URL: redis://redis:6379/0
+  RATE_LIMIT: ${RATE_LIMIT:-120/minute}
+  RATE_LIMIT_STORAGE: redis://redis:6379/1
+  API_WORKERS: "1"
+  API_KEY: ${API_KEY:-}
+  COOKIE_SECURE: ${COOKIE_SECURE:-false}
+  REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
+  APP_DB_PATH: /app/runtime/application.sqlite3
+  UPLOAD_DIR: /app/runtime/uploads
+  LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+  LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+  LANGFUSE_HOST: ${LANGFUSE_HOST:-https://cloud.langfuse.com}
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: stacklens
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stacklens}
+      POSTGRES_DB: stacklens
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: ["postgres-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stacklens -d stacklens"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports: ["127.0.0.1:6379:6379"]
+    volumes: ["redis-data:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+  migrate:
+    build: .
+    image: stacklens:local
+    environment: *app-env
+    depends_on:
+      postgres: {condition: service_healthy}
+    entrypoint: ["alembic", "upgrade", "head"]
+    restart: "no"
+  api:
+    build: .
+    image: stacklens:local
+    environment:
+      <<: *app-env
+      INGESTION_MODE: local
+    ports: ["127.0.0.1:8080:8080"]
+    volumes: ["app-data:/app/runtime"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    restart: unless-stopped
+volumes:
+  postgres-data:
+  redis-data:
+  app-data:

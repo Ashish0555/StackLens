@@ -1,0 +1,46 @@
+name: AI pull-request review
+
+on:
+  workflow_dispatch:
+    inputs:
+      pull_request:
+        description: "Pull-request number to review"
+        required: true
+        type: string
+      publish:
+        description: "Publish inline comments to the pull request"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Check out StackLens
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install StackLens
+        run: pip install .
+
+      - name: Review pull request
+        env:
+          PUBLISH: ${{ inputs.publish }}
+        run: |
+          if [ "$PUBLISH" = "true" ]; then
+            stacklens review-pr "${{ github.repository }}" "${{ inputs.pull_request }}" --publish
+          else
+            stacklens review-pr "${{ github.repository }}" "${{ inputs.pull_request }}"
+          fi

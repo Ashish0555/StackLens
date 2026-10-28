@@ -1,0 +1,33 @@
+name: Manual model evaluation
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env: {POSTGRES_USER: stacklens, POSTGRES_PASSWORD: stacklens, POSTGRES_DB: stacklens}
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U stacklens -d stacklens"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Require configured credential
+        run: test -n "$OPENAI_API_KEY"
+      - run: pip install .
+      - run: alembic upgrade head
+      - run: stacklens ingest
+      - run: stacklens eval --dataset evals/dataset.json --limit 20 --max-cost 1 --min-score 0.8
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: synthetic-evaluation
+          path: evals/results/*.json

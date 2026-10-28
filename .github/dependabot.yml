@@ -1,0 +1,44 @@
+version: 2
+
+updates:
+  # A portfolio repository sits idle between visits. Monthly is enough to keep
+  # it from rotting without turning the inbox into a pull request feed.
+  #
+  # Everything is grouped. Ten open pull requests for ten bumps is ten CI runs
+  # and ten reviews of the same question, and the answer is almost always the
+  # same for all of them. One pull request per ecosystem is one run and one
+  # decision, and if it breaks, the bisect is a `git log` of four lines.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: build
+      prefix-development: build
+    groups:
+      # Separate because these move together and break together: an agent
+      # built on langchain 1.x does not run on 2.x, and reviewing that upgrade
+      # next to a pytest bump helps nobody.
+      langchain:
+        patterns:
+          - "langchain*"
+          - "langgraph*"
+      python:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "langchain*"
+          - "langgraph*"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: build
+    groups:
+      actions:
+        patterns:
+          - "*"

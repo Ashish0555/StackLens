@@ -1,0 +1,54 @@
+# Use together with docker-compose.yml. One host, shared application volume.
+services:
+  kafka:
+    image: apache/kafka:4.1.2
+    environment:
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    volumes: ["kafka-data:/var/lib/kafka/data"]
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+    restart: unless-stopped
+  kafka-init:
+    image: apache/kafka:4.1.2
+    depends_on:
+      kafka: {condition: service_healthy}
+    entrypoint: ["/opt/kafka/bin/kafka-topics.sh"]
+    command: ["--bootstrap-server", "kafka:9092", "--create", "--if-not-exists", "--topic", "stacklens.ingestion", "--partitions", "3", "--replication-factor", "1"]
+    restart: "no"
+  api:
+    environment:
+      INGESTION_MODE: kafka
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  worker:
+    build: .
+    image: stacklens:local
+    entrypoint: ["python", "-m", "stacklens.workspace.worker"]
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?Set OPENAI_API_KEY in .env}
+      DATABASE_URL: postgresql+psycopg://stacklens:${POSTGRES_PASSWORD:-stacklens}@postgres:5432/stacklens
+      INGESTION_MODE: kafka
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      APP_DB_PATH: /app/runtime/application.sqlite3
+      UPLOAD_DIR: /app/runtime/uploads
+    volumes: ["app-data:/app/runtime"]
+    depends_on:
+      api: {condition: service_started}
+      kafka-init: {condition: service_completed_successfully}
+    restart: unless-stopped
+volumes:
+  kafka-data:
