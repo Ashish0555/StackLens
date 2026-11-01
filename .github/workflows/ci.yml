@@ -10,8 +10,8 @@ jobs:
   quality:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with: {python-version: '3.12'}
       - run: pip install -e '.[dev]'
       - run: ruff check src tests
@@ -32,8 +32,8 @@ jobs:
           --health-cmd "pg_isready -U stacklens -d stacklens"
           --health-interval 5s --health-timeout 5s --health-retries 12
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with: {python-version: '3.12'}
       - run: pip install -e '.[dev]'
       - run: alembic upgrade head
@@ -41,7 +41,7 @@ jobs:
   container:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: docker compose config --quiet
         env: {OPENAI_API_KEY: build-only-placeholder}
       - run: docker compose -f docker-compose.yml -f docker-compose.kafka.yml config --quiet
